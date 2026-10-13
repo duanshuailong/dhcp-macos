@@ -23,16 +23,25 @@ DHCP/
 
 ---
 
-## 从 GitHub 克隆后使用
+## 从 GitLab 克隆后使用
 
-在新的 Mac 上：
+本工具收录在 `tools` 仓库的 `mac-dhcp/` 子目录下。在新的 Mac 上：
 
 ### 1. 克隆并进入目录
 
 ```bash
-git clone https://github.com/duanshuailong/dhcp-macos.git
-cd dhcp-macos
+git clone http://218.94.19.74:8081/duanshuailong/tools.git
+cd tools/mac-dhcp
 ```
+
+> 只想拿这一个工具、不想下整个仓库，可用稀疏检出：
+>
+> ```bash
+> git clone --filter=blob:none --sparse http://218.94.19.74:8081/duanshuailong/tools.git
+> cd tools
+> git sparse-checkout set mac-dhcp
+> cd mac-dhcp
+> ```
 
 ### 2. 补齐可执行权限
 
@@ -42,7 +51,7 @@ git 一般会保留可执行位，但保险起见执行一次（无害）：
 chmod +x dhcp.sh bin/*/dnsmasq "打开控制台.command"
 ```
 
-> **相比 AirDrop / 下载的好处**：用 `git clone` 下来的文件**不会**被 macOS 打上隔离属性（quarantine），所以通常**不需要**再跑 `xattr -dr com.apple.quarantine`，`.app` / `.command` 双击一般能直接打开。若个别情况仍被 Gatekeeper 拦，再在图标上**右键 → 打开**一次，或执行 `xattr -dr com.apple.quarantine .`。
+> **相比 AirDrop / 下载的好处**：从内网 GitLab `git clone` 下来的文件**不会**被 macOS 打上隔离属性（quarantine），所以通常**不需要**再跑 `xattr -dr com.apple.quarantine`，`.app` / `.command` 双击一般能直接打开。若个别情况仍被 Gatekeeper 拦，再在图标上**右键 → 打开**一次，或执行 `xattr -dr com.apple.quarantine .`。
 
 ### 3. 探测网卡并改配置
 
@@ -63,7 +72,7 @@ sudo ./dhcp.sh 开启          # 开启 DHCP
 
 或直接用可视化控制台：`./dhcp.sh ui`（详见下方「可视化界面」）。
 
-> 后续拉取更新：`cd dhcp-macos && git pull`。改动本工具后回推：`git add -A && git commit -m "..." && git push`。
+> 后续拉取更新：`cd tools && git pull`。改动本工具后回推：`git add -A && git commit -m "..." && git push`。
 
 ---
 
