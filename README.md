@@ -3,7 +3,7 @@
 拷贝本目录到任意 Mac 即可。含 arm64 / x86_64 二进制，无需 Homebrew。
 
 ```
-DHCP/
+dhcp-macos/
 ├── 打开 Mac DHCP.app    # 双击打开网页控制台（推荐）
 ├── 打开控制台.command   # 同上（会弹出终端窗口）
 ├── dhcp.sh              # 命令行入口
@@ -12,7 +12,7 @@ DHCP/
 │   ├── index.html
 │   ├── app.js
 │   └── style.css
-├── leases.txt           # 已分配 IP 可读副本
+├── leases.txt           # 已分配 IP 可读副本（运行后自动生成，不入库）
 ├── config/
 │   ├── network.env      # 网段 / 地址池
 │   └── dhcp-hosts.conf  # 静态 MAC↔IP（可选）
@@ -25,23 +25,16 @@ DHCP/
 
 ## 从 GitLab 克隆后使用
 
-本工具收录在 `tools` 仓库的 `mac-dhcp/` 子目录下。在新的 Mac 上：
+本工具是内网 GitLab 上的独立仓库 `dhcp-macos`（文件在仓库根目录）。在新的 Mac 上：
 
 ### 1. 克隆并进入目录
 
 ```bash
-git clone http://218.94.19.74:8081/duanshuailong/tools.git
-cd tools/mac-dhcp
+git clone git@218.94.19.74:duanshuailong/dhcp-macos.git
+cd dhcp-macos
 ```
 
-> 只想拿这一个工具、不想下整个仓库，可用稀疏检出：
->
-> ```bash
-> git clone --filter=blob:none --sparse http://218.94.19.74:8081/duanshuailong/tools.git
-> cd tools
-> git sparse-checkout set mac-dhcp
-> cd mac-dhcp
-> ```
+> 需要本机 SSH 公钥已添加到 GitLab 账号。GitHub 上另有同名镜像：`git@github.com:duanshuailong/dhcp-macos.git`。
 
 ### 2. 补齐可执行权限
 
@@ -72,13 +65,13 @@ sudo ./dhcp.sh 开启          # 开启 DHCP
 
 或直接用可视化控制台：`./dhcp.sh ui`（详见下方「可视化界面」）。
 
-> 后续拉取更新：`cd tools && git pull`。改动本工具后回推：`git add -A && git commit -m "..." && git push`。
+> 后续拉取更新：`cd dhcp-macos && git pull`。改动本工具后回推：`git add -A && git commit -m "..." && git push`。
 
 ---
 
 ## 拷贝到其他机器
 
-整个 `DHCP` 文件夹是自包含的，**把文件夹整体拷过去即可**，无需 Homebrew、无需联网安装。
+整个 `dhcp-macos` 文件夹是自包含的，**把文件夹整体拷过去即可**，无需 Homebrew、无需联网安装。
 
 ### 必须带上
 
@@ -104,7 +97,7 @@ sudo ./dhcp.sh 开启          # 开启 DHCP
 
 ```bash
 cd ~/Desktop
-zip -r DHCP.zip DHCP -x "DHCP/dhcp.sh.bak" "DHCP/leases.txt" "DHCP/.DS_Store"
+zip -r dhcp-macos.zip dhcp-macos -x "dhcp-macos/.git/*" "dhcp-macos/dhcp.sh.bak" "dhcp-macos/leases.txt" "dhcp-macos/.DS_Store"
 ```
 
 U 盘 / AirDrop 直接拖文件夹也行；若拖拽后权限丢失，双击 `打开控制台.command` 会自动 `chmod` 修复。
@@ -114,7 +107,7 @@ U 盘 / AirDrop 直接拖文件夹也行；若拖拽后权限丢失，双击 `�
 每台 Mac 的网卡名不同，务必重新探测：
 
 ```bash
-cd /到/DHCP                 # 进入拷贝过去的目录
+cd /到/dhcp-macos           # 进入拷贝过去的目录
 ./dhcp.sh detect            # 1) 看「网卡映射」表，找到连客户端的那张网卡（如 en5）
 open -e config/network.env  # 2) 改 INTERFACE=enX；NETWORK_SERVICE 建议留空由脚本自动解析
 sudo ./dhcp.sh install      # 3) 安装 + 应用配置
@@ -128,7 +121,7 @@ sudo ./dhcp.sh 开启          #    开启 DHCP
 > **换机器第一步（强烈建议）**：下载 / 解压 / AirDrop 后，macOS 会给**整个文件夹**打上隔离属性，可能导致 `.app`、`.command` 双击打不开或被 Gatekeeper 拦。到新机器解压后，先对整个目录清一次（只需一次）：
 >
 > ```bash
-> xattr -dr com.apple.quarantine ~/Downloads/DHCP    # 换成你的实际解压路径
+> xattr -dr com.apple.quarantine ~/Downloads/dhcp-macos    # 换成你的实际解压路径
 > ```
 >
 > 脚本每次运行时也会自动清一次整包隔离属性（`heal_bundle`），但它**清不掉“正在启动它自己的那个 .app/.command”**——所以启动器被拦时，仍需上面这条命令，或在图标上**右键 → 打开**一次。
@@ -157,7 +150,7 @@ sudo ./dhcp.sh 开启          #    开启 DHCP
 也可以在终端：
 
 ```bash
-cd ~/Desktop/DHCP
+cd ~/Desktop/dhcp-macos
 ./dhcp.sh ui
 ```
 
@@ -167,10 +160,10 @@ cd ~/Desktop/DHCP
 
 | 区域 | 作用 |
 |------|------|
-| 顶部状态 | DHCP 开/关、网卡、链路（已接通/未接通）、实际 IP / 期望 IP、地址池、租约、安装状态；有风险时显示黄色提示 |
+| 顶部状态 | DHCP 开/关、网卡、链路（已接通/未接通）、实际 IP / 期望 IP、地址池、**剩余可分配**（剩余 / 共多少，用尽时变黄）、租约、安装状态；有风险时显示黄色提示 |
 | 工具栏 | **开启 / 关闭 DHCP**、**配置网卡 IP**、**安装 / 应用配置**、**探测网卡** |
 | 识别到的网卡 | 列表点选 → 自动填入 `INTERFACE` / `NETWORK_SERVICE`（勿选正在上网的 Wi-Fi） |
-| 已分配 IP | 租约表，约每 5 秒刷新 |
+| 已分配 IP | 租约表（IP / MAC / 主机名 / 过期时间 / 状态：有效或过期），约每 5 秒刷新；**清除租约**按钮会清空租约库，服务运行中则自动重启以重新分配地址池 |
 | 网络参数 | 在线编辑 `network.env`（按网卡 / 本机地址 / DHCP 池分组） |
 | 输出 / 日志 | 命令输出；可「拉取日志」看 dnsmasq 日志 |
 
@@ -191,7 +184,7 @@ cd ~/Desktop/DHCP
 - 仅监听本机 `127.0.0.1:8787`，不对外网开放；需要本机 `python3`。  
 - 包若在「桌面」，提权时会先同步到 `/tmp/mac-dhcp-ui-bundle` 再执行（避开 macOS 桌面权限限制）。  
 - 提权走系统密码框；子命令用英文（`start` / `stop` / `setip`），避免中文参数被破坏。  
-- 改完前端后若页面异常，**硬刷新**（⌘⇧R）或重启 `./dhcp.sh ui`（静态资源带版本号如 `?v=4`）。  
+- 改完前端后若页面异常，**硬刷新**（⌘⇧R）或重启 `./dhcp.sh ui`（静态资源带版本号，如 `style.css?v=18`，改前端时需同步递增）。  
 - 链路「未接通」时服务仍可开启，但客户端需插线后才能拿地址。
 
 ---
@@ -203,7 +196,7 @@ cd ~/Desktop/DHCP
 ### 1. 进入目录并赋予执行权限
 
 ```bash
-cd ~/Desktop/DHCP
+cd ~/Desktop/dhcp-macos
 chmod +x dhcp.sh bin/*/dnsmasq
 ```
 
@@ -243,7 +236,7 @@ sudo ./dhcp.sh setip
 sudo ./dhcp.sh install
 ```
 
-会安装 dnsmasq、写入配置、尝试设静态 IP，并注册服务（**默认不开机自启**）。
+会先打印即将下发的网段 / 地址池 / 网关 / DNS，并在交互终端里等你确认 `[Y/n]`（UI 或非 TTY 环境直接继续）。确认后安装 dnsmasq、写入配置、尝试设静态 IP，并注册服务（**默认不开机自启**）。
 
 ### 6. 开启 DHCP
 
@@ -282,6 +275,8 @@ sudo ./dhcp.sh 开启                 # 或: on / start
 sudo ./dhcp.sh 关闭                 # 或: 关机 / off / stop
 ./dhcp.sh status
 ./dhcp.sh leases
+sudo ./dhcp.sh clear-leases        # 清除租约历史并重新分配（别名: 清除租约 / 重置租约）
+sudo ./dhcp.sh debug               # 前台调试（--log-queries，需先 stop，Ctrl+C 退出）
 sudo ./dhcp.sh uninstall --purge   # 彻底卸载系统侧文件
 ```
 
