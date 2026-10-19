@@ -277,7 +277,7 @@ sudo ./dhcp.sh 关闭                 # 或: 关机 / off / stop
 ./dhcp.sh leases
 sudo ./dhcp.sh clear-leases        # 清除租约历史并重新分配（别名: 清除租约 / 重置租约）
 sudo ./dhcp.sh debug               # 前台调试（--log-queries，需先 stop，Ctrl+C 退出）
-sudo ./dhcp.sh uninstall --purge   # 彻底卸载系统侧文件
+sudo ./dhcp.sh uninstall --purge   # 彻底卸载系统侧文件（完整步骤见下方「卸载 / 清理」）
 ```
 
 改过 `config/network.env` 后，需要再执行：
@@ -288,6 +288,71 @@ sudo ./dhcp.sh 开启
 ```
 
 （UI 对应：保存配置 → 安装 / 应用配置 → 开启 DHCP；若只改了本机 IP，可再点「配置网卡 IP」。）
+
+---
+
+## 卸载 / 清理
+
+`install` 会往系统目录写文件，删除本文件夹**不会**清掉它们，需要按下面步骤卸载。下面的 `sudo` 命令请在系统「终端」App 里执行，保证能输入管理员密码。
+
+### 1. 先关掉可视化控制台
+
+关闭浏览器页面不够，要结束后台进程，否则卸载后在页面里点「安装 / 开启」会把文件又装回来：
+
+```bash
+pkill -f ui/server.py     # 无输出即可
+```
+
+### 2. 卸载系统侧文件
+
+```bash
+cd /到/dhcp-macos
+sudo ./dhcp.sh uninstall --purge
+```
+
+会停止服务，并删除：
+
+| 路径 | 内容 |
+|------|------|
+| `/Library/LaunchDaemons/com.local.mac-dhcp.plist` | 服务注册 |
+| `/usr/local/etc/mac-dhcp` | 系统侧配置 |
+| `/usr/local/var/mac-dhcp` | 租约库 |
+| `/usr/local/var/log/mac-dhcp` | 日志 |
+| `/usr/local/sbin/dnsmasq` | 安装的二进制 |
+
+不加 `--purge` 只停服务并删 plist，配置、租约和日志仍保留。
+
+### 3. 把网卡改回自动获取（卸载不会做这一步）
+
+`uninstall` 不会还原网卡设置，网卡会继续保持手动 IP（如 `10.0.0.254`）。服务名见 `./dhcp.sh detect` 输出的「网卡映射」里的网络服务名（也是 `network.env` 的 `NETWORK_SERVICE`），如 `UGREEN`：
+
+```bash
+sudo networksetup -setdhcp UGREEN
+```
+
+### 4. 确认已清干净
+
+```bash
+ls /usr/local/etc/mac-dhcp /usr/local/var/mac-dhcp /usr/local/sbin/dnsmasq /Library/LaunchDaemons/com.local.mac-dhcp.plist
+pgrep -lf dnsmasq || echo none
+```
+
+前一条应全部提示 `No such file or directory`，后一条应输出 `none`。
+
+### 脚本卸载失败时手动删除
+
+范围只有上表 5 个路径：
+
+```bash
+sudo launchctl bootout system/com.local.mac-dhcp 2>/dev/null
+sudo rm -rf /Library/LaunchDaemons/com.local.mac-dhcp.plist /usr/local/etc/mac-dhcp /usr/local/var/mac-dhcp /usr/local/var/log/mac-dhcp /usr/local/sbin/dnsmasq
+```
+
+> 若命令看起来执行了、文件却还在，多半是 `sudo` 没有终端，没法弹出密码输入而静默失败。换到「终端」App 里执行。
+
+### 5. 删除本文件夹（可选）
+
+系统侧清理完后，直接删除 `dhcp-macos` 文件夹即可。控制台运行时会在 `/tmp/mac-dhcp-ui-bundle` 留一份临时副本，可顺手 `rm -rf /tmp/mac-dhcp-ui-bundle`。
 
 ---
 
@@ -390,5 +455,5 @@ aa:bb:cc:dd:ee:ff,10.144.31.11,camera01
 - 同一局域网不要开多个 DHCP（含路由器自带的 DHCP）
 - 默认只做 DHCP（`ENABLE_DNS=false`），不抢系统 53 端口
 - 默认不开机自启（`RUN_AT_LOAD=false`），需手动开启
-- `install` 只会写入 `/usr/local/.../mac-dhcp` 与专用 LaunchDaemon，可用 `uninstall --purge` 清干净
+- `install` 只会写入 `/usr/local/.../mac-dhcp` 与专用 LaunchDaemon，可用 `uninstall --purge` 清干净（网卡的手动 IP 需另行改回 DHCP，见「卸载 / 清理」）
 - USB 网卡链路 inactive 时：IP 仍可写上，但客户端需插线后才能拿到租约
