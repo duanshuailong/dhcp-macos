@@ -330,13 +330,17 @@ def ip_to_int(ip):
         return None
 
 
-def pool_size(start, end):
-    """地址池可分配总数（含首尾）；范围非法返回 0。"""
+def pool_size(start, end, exclude=None):
+    """地址池可分配总数（含首尾，扣除落在池内的 exclude）；范围非法返回 0。"""
     a = ip_to_int(start)
     b = ip_to_int(end)
     if a is None or b is None or b < a:
         return 0
-    return b - a + 1
+    n = b - a + 1
+    x = ip_to_int(exclude) if exclude else None
+    if x is not None and a <= x <= b:
+        n -= 1
+    return n
 
 
 def get_status():
@@ -377,11 +381,11 @@ def get_status():
         "dns": env.get("DNS_SERVERS", ""),
         "lease_count": len(leases),
         "active_leases": sum(1 for r in leases if r["active"]),
-        "pool_total": pool_size(env.get("RANGE_START", ""), env.get("RANGE_END", "")),
+        "pool_total": pool_size(env.get("RANGE_START", ""), env.get("RANGE_END", ""), server_ip),
         "pool_used": sum(1 for r in leases if r["active"]),
         "pool_free": max(
             0,
-            pool_size(env.get("RANGE_START", ""), env.get("RANGE_END", ""))
+            pool_size(env.get("RANGE_START", ""), env.get("RANGE_END", ""), server_ip)
             - sum(1 for r in leases if r["active"]),
         ),
         "warnings": warnings,

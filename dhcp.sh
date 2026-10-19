@@ -170,10 +170,12 @@ validate_net() {
   if (( rs > re )); then
     err "地址池起止颠倒: ${RANGE_START} > ${RANGE_END}"; exit 1
   fi
-  if (( s >= rs && s <= re )); then
-    err "SERVER_IP ${SERVER_IP} 落在地址池 ${RANGE_START}~${RANGE_END} 内，会把本机地址分给客户端"
-    err "请缩小地址池，或换一个池外的 SERVER_IP"
+  if (( s == rs && s == re )); then
+    err "地址池只有 SERVER_IP ${SERVER_IP} 一个地址，排除本机后无地址可分配"
     exit 1
+  fi
+  if (( s >= rs && s <= re )); then
+    info "SERVER_IP ${SERVER_IP} 在地址池内，生成配置时会自动排除"
   fi
   if (( (rs & m) != net || (re & m) != net )); then
     err "地址池 ${RANGE_START}~${RANGE_END} 超出 SERVER_IP ${SERVER_IP} 的网段（掩码 ${NETMASK}）"
@@ -185,6 +187,30 @@ validate_net() {
   if (( m < 4294901760 )); then
     warn "掩码 ${NETMASK} 网段过大（/16 以下），容易与 VPN / 其他内网的 10.x 地址冲突，建议改用 255.255.255.0"
   fi
+}
+
+int2ip() {
+  local n="$1"
+  echo "$(( (n >> 24) & 255 )).$(( (n >> 16) & 255 )).$(( (n >> 8) & 255 )).$(( n & 255 ))"
+}
+
+# 输出 dhcp-range 行；SERVER_IP 落在池内时拆成两段，把本机地址挖掉
+pool_range_lines() {
+  local s rs re
+  s="$(ip2int "$SERVER_IP")"
+  rs="$(ip2int "$RANGE_START")"
+  re="$(ip2int "$RANGE_END")"
+  if (( s < rs || s > re )); then
+    echo "dhcp-range=${RANGE_START},${RANGE_END},${NETMASK},${LEASE_TIME}"
+    return 0
+  fi
+  if (( s > rs )); then
+    echo "dhcp-range=${RANGE_START},$(int2ip $(( s - 1 ))),${NETMASK},${LEASE_TIME}"
+  fi
+  if (( s < re )); then
+    echo "dhcp-range=$(int2ip $(( s + 1 ))),${RANGE_END},${NETMASK},${LEASE_TIME}"
+  fi
+  return 0
 }
 
 dns_csv() {
@@ -220,7 +246,7 @@ no-dhcp-interface=llw0
 no-resolv
 no-poll
 domain=${DOMAIN_NAME}
-dhcp-range=${RANGE_START},${RANGE_END},${NETMASK},${LEASE_TIME}
+$(pool_range_lines)
 dhcp-option=option:router,${ROUTER}
 dhcp-option=option:dns-server,$(dns_csv)
 dhcp-option=option:domain-name,${DOMAIN_NAME}
