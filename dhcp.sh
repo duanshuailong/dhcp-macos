@@ -143,6 +143,48 @@ load_env() {
     fi
   fi
   export INTERFACE NETWORK_SERVICE
+  validate_net
+}
+
+# 点分 IPv4 → 整数；格式不合法返回 1（兼容 macOS 自带 bash 3.2）
+ip2int() {
+  local IFS=. a b c d
+  read -r a b c d <<<"$1"
+  local o
+  for o in "$a" "$b" "$c" "$d"; do
+    [[ "$o" =~ ^[0-9]+$ ]] && (( o <= 255 )) || return 1
+  done
+  echo $(( (a << 24) + (b << 16) + (c << 8) + d ))
+}
+
+# 启动前校验网段配置，配错直接拒绝，避免下发错误地址池或把本机网关指向自己
+validate_net() {
+  local s m rs re rt net
+  s="$(ip2int "$SERVER_IP")"    || { err "SERVER_IP 格式错误: ${SERVER_IP}"; exit 1; }
+  m="$(ip2int "$NETMASK")"      || { err "NETMASK 格式错误: ${NETMASK}"; exit 1; }
+  rs="$(ip2int "$RANGE_START")" || { err "RANGE_START 格式错误: ${RANGE_START}"; exit 1; }
+  re="$(ip2int "$RANGE_END")"   || { err "RANGE_END 格式错误: ${RANGE_END}"; exit 1; }
+  rt="$(ip2int "$ROUTER")"      || { err "ROUTER 格式错误: ${ROUTER}"; exit 1; }
+  net=$(( s & m ))
+
+  if (( rs > re )); then
+    err "地址池起止颠倒: ${RANGE_START} > ${RANGE_END}"; exit 1
+  fi
+  if (( s >= rs && s <= re )); then
+    err "SERVER_IP ${SERVER_IP} 落在地址池 ${RANGE_START}~${RANGE_END} 内，会把本机地址分给客户端"
+    err "请缩小地址池，或换一个池外的 SERVER_IP"
+    exit 1
+  fi
+  if (( (rs & m) != net || (re & m) != net )); then
+    err "地址池 ${RANGE_START}~${RANGE_END} 超出 SERVER_IP ${SERVER_IP} 的网段（掩码 ${NETMASK}）"
+    exit 1
+  fi
+  if (( (rt & m) != net )); then
+    warn "ROUTER ${ROUTER} 不在 ${SERVER_IP}/${NETMASK} 网段内，客户端可能无法使用该网关"
+  fi
+  if (( m < 4294901760 )); then
+    warn "掩码 ${NETMASK} 网段过大（/16 以下），容易与 VPN / 其他内网的 10.x 地址冲突，建议改用 255.255.255.0"
+  fi
 }
 
 dns_csv() {
@@ -375,6 +417,16 @@ set_static_ip() {
     fi
   done
 
+  # 同一个 SERVER_IP 残留在别的网卡上（如自动改选网卡留下的）会让路由选择不确定，先清掉
+  local other
+  for other in $(ifconfig -l); do
+    [[ "$other" == "$INTERFACE" ]] && continue
+    if ifconfig "$other" 2>/dev/null | grep -q "inet ${SERVER_IP} "; then
+      ifconfig "$other" inet "$SERVER_IP" delete 2>/dev/null \
+        && warn "已清除 ${other} 上残留的 ${SERVER_IP}"
+    fi
+  done
+
   # networksetup 在链路 inactive 时常常“成功”但不把 IP 挂到网卡上；
   # dnsmasq 要求接口上有地址，否则会报 unknown interface。必须再 ifconfig 一次。
   if ifconfig "$INTERFACE" inet "$SERVER_IP" netmask "$NETMASK" up 2>/dev/null; then
@@ -400,7 +452,33 @@ set_static_ip() {
   if [[ "${st}" == "inactive" ]]; then
     warn "网线未接通（inactive）：服务或许能启动，但客户端要在插上网线后才能拿到地址"
   fi
+  warn_service_order
   return 0
+}
+
+# 本网卡的服务排在 Wi-Fi 前面、且网关指向本机自己时，链路接通后默认路由会被抢走，本机断网。
+warn_service_order() {
+  [[ "$ROUTER" == "$SERVER_IP" ]] || return 0
+  local mine wifi svcs=() line i idx_mine=-1 idx_wifi=-1
+  mine="$(find_net_service_by_device "$INTERFACE" 2>/dev/null || true)"
+  wifi="$(find_net_service_by_device en0 2>/dev/null || true)"
+  [[ -n "$mine" && -n "$wifi" ]] || return 0
+  while IFS= read -r line; do
+    svcs+=("$line")
+  done < <(networksetup -listnetworkserviceorder 2>/dev/null | sed -n 's/^([0-9*]*) //p')
+  for i in "${!svcs[@]}"; do
+    [[ "${svcs[$i]}" == "$mine" ]] && idx_mine=$i
+    [[ "${svcs[$i]}" == "$wifi" ]] && idx_wifi=$i
+  done
+  if (( idx_mine >= 0 && idx_wifi >= 0 && idx_mine < idx_wifi )); then
+    warn "网络服务顺序中「${mine}」排在「${wifi}」前面，且网关是本机自己；链路接通后默认路由可能被抢走，导致本机无法上网"
+    local cmd="sudo networksetup -ordernetworkservices \"${wifi}\""
+    for i in "${!svcs[@]}"; do
+      [[ "${svcs[$i]}" == "$wifi" ]] && continue
+      cmd="${cmd} \"${svcs[$i]}\""
+    done
+    warn "修复（把 Wi-Fi 排到最前）: ${cmd}"
+  fi
 }
 
 
